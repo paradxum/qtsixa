@@ -172,6 +172,7 @@ void l2cap_accept(int ctl, int csk, int isk, int debug, int legacy)
     struct hidp_connadd_req req;
     socklen_t addrlen;
     bdaddr_t addr_src, addr_dst;
+    char bda[18];
     int ctrl_socket, intr_socket, err;
 
     memset(&addr, 0, sizeof(addr));
@@ -203,16 +204,16 @@ void l2cap_accept(int ctl, int csk, int isk, int debug, int legacy)
         return;
     }
 
-#ifdef GASIA_GAMEPAD_HACKS
-    req.vendor  = 0x054c;
-    req.product = 0x0268;
-    req.version = 0x0100;
-    req.parser  = 0x0100;
+    err = get_sdp_device_info(&addr_src, &addr_dst, &req);
+    if(err == -1 && ba2str(&addr_dst, bda) && check_if_paired(bda)){
+    	req.vendor  = 0x054c;
+    	req.product = 0x0268;
+    	req.version = 0x0100;
+    	req.parser  = 0x0100;
 
-    strcpy(req.name, "Gasia Gamepad experimental driver");
-#else
-    get_sdp_device_info(&addr_src, &addr_dst, &req);
-#endif
+    	strcpy(req.name, "Generic Gamepad");
+	err=0;
+	}
 
     if (!legacy && req.vendor == 0x054c && req.product == 0x0268) {
         if (debug) syslog(LOG_INFO, "Will initiate Sixaxis now");
@@ -377,18 +378,16 @@ int create_device(int ctl, int csk, int isk)
      req.idle_to   = 1800;
 
 
-#ifdef GASIA_GAMEPAD_HACKS
-    req.vendor  = 0x054c;
-    req.product = 0x0268;
-    req.version = 0x0100;
-    req.parser  = 0x0100;
-
-    strcpy(req.name, "Gasia Gamepad experimental driver");
-
-    err = 0;
-#else
     err = get_sdp_device_info(&src, &dst, &req);
-#endif
+    if(err == -1 && ba2str(&dst, bda) && check_if_paired(bda)){
+    	req.vendor  = 0x054c;
+    	req.product = 0x0268;
+    	req.version = 0x0100;
+    	req.parser  = 0x0100;
+
+    	strcpy(req.name, "Generic Gamepad");
+    	err = 0;
+	}
 
      if (err < 0)
          return err;
@@ -403,6 +402,20 @@ int create_device(int ctl, int csk, int isk)
   return 0;
 }
 
+int check_if_paired(char *mac){
+    FILE *fp=fopen("/var/lib/sixad/paired_ps3_controllers","r");
+    char  tmp[256]={0x0};
+    while(fp!=NULL && fgets(tmp, sizeof(tmp),fp)!=NULL){
+	if (strcasecmp(tmp, mac)){
+            if(fp!=NULL) fclose(fp);
+            return 1;
+        }
+    }	
+    if(fp!=NULL) fclose(fp);
+    return 0;
+}
+
+
 int get_sdp_device_info(const bdaddr_t *src, const bdaddr_t *dst, struct hidp_connadd_req *req)
 {
     struct sockaddr_l2 addr;
@@ -416,9 +429,23 @@ int get_sdp_device_info(const bdaddr_t *src, const bdaddr_t *dst, struct hidp_co
     uint32_t range = 0x0000ffff;
     int err;
 
-    sdp_session = sdp_connect(src, dst, SDP_RETRY_IF_BUSY | SDP_WAIT_ON_CLOSE);
+    // Do a non-blocking connect. Some cheap controllers do not support sdp and we'd be
+    //	waiting a very long time otherwise.
+    sdp_session = sdp_connect(src, dst, SDP_NON_BLOCKING);
     if (!sdp_session) {
         syslog(LOG_ERR, "unable to connect to sdp session");
+        return -1;
+    }
+
+    // Since we do a non-blocking read above, find out if we are connected.
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 500000;
+    fd_set rwFds;
+    FD_ZERO(&rwFds);
+    FD_SET(sdp_session->sock, &rwFds);
+    if (select(sdp_session->sock + 1, &rwFds, &rwFds, NULL, &tv) == 0) {
+        syslog(LOG_ERR, "SDP request Timeout");
         return -1;
     }
 

@@ -37,4 +37,6 @@ int create_device(int ctl, int csk, int isk);
 int get_sdp_device_info(const bdaddr_t *src, const bdaddr_t *dst, struct hidp_connadd_req *req);
 void epox_endian_quirk(unsigned char *data, int size);
 
+int check_if_paired(char *mac);
+
 #endif // BLUETOOTH_H

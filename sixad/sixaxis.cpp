@@ -381,6 +381,7 @@ void do_input(int fd, unsigned char* buf, struct dev_input input)
 void do_rumble(int csk, int led_n, int weak, int strong, int timeout)
 {
     unsigned char setrumble[] = {
+// es - Seriously don't think these hacks are needed anymore.
 #ifdef GASIA_GAMEPAD_HACKS
         0x92,
 #else
@@ -422,22 +423,19 @@ void do_rumble(int csk, int led_n, int weak, int strong, int timeout)
 
     setrumble[11] = ledpattern[led_n]; //keep old led
     send(csk, setrumble, sizeof(setrumble), 0);
-#ifndef GASIA_GAMEPAD_HACKS
     unsigned char buf[128];
     recv(csk, buf, sizeof(buf), 0); //MSG_DONTWAIT?
-#endif
 }
 
 int set_sixaxis_led(int csk, struct dev_led led, int rumble)
 {
     int led_n, led_number;
 
-#ifndef GASIA_GAMEPAD_HACKS
     int i;
     unsigned char buf[128];
-#endif
 
     unsigned char setleds[] = {
+// es - Seriously don't think these hacks are needed anymore.
 #ifdef GASIA_GAMEPAD_HACKS
         0x92,
 #else
@@ -475,12 +473,11 @@ int set_sixaxis_led(int csk, struct dev_led led, int rumble)
     } else
         led_n = 0;
 
-#ifndef GASIA_GAMEPAD_HACKS
     if (led.enabled && led.anim)
     {
         /* Sixaxis LED animation - Way Cool!! */
         if (rumble) setleds[3] = setleds[5] = 0xfe;
-        for (i=0; i<4; i++) {  // repeat it 4 times
+        for (i=0; i<2; i++) {  // repeat it 2 times (used to be 4, but takes too long if hitting timeout)
             if (rumble) setleds[4] = setleds[6] = 0xff;
             setleds[11] = ledpattern[1];
             send(csk, setleds, sizeof(setleds), 0);
@@ -538,16 +535,14 @@ int set_sixaxis_led(int csk, struct dev_led led, int rumble)
             send(csk, setleds, sizeof(setleds), 0);
             recv(csk, buf, sizeof(buf), 0);
         }
+        usleep(100000);
     }
-#endif
 
     /* set LEDs (final) */
     setleds[11] = ledpattern[led_n];
     if (rumble) setleds[3] = setleds[4] = setleds[5] = setleds[6] = 0x00;
     send(csk, setleds, sizeof(setleds), 0);
-#ifndef GASIA_GAMEPAD_HACKS
     recv(csk, buf, sizeof(buf), 0);
-#endif
 
     return led_n;
 }
